@@ -1,0 +1,27 @@
+---
+title: "data"
+author: "John Chua"
+date: "10/14/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+library(janitor)
+```
+
+```{r}
+data <- read_csv("raw_data/Community_Development_Public_Service_Program_Activities_by_Neighborhood.csv") %>%
+  clean_names()
+
+filtered_data <- data %>%
+  filter(fiscal_year == "2018-19") 
+write_rds(filtered_data, "App/data.rds")
+```
+
+```{r}
+read_rds("App/data.rds")
+```
+
