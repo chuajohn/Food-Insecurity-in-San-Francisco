@@ -1,0 +1,12 @@
+name: Food_Security_SF
+title: Food_Security_SF
+username:
+account: johnchua
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 3035606
+bundleId: 3774879
+url: https://johnchua.shinyapps.io/Food_Security_SF/
+when: 1603467548.86059
+asMultiple: FALSE
+asStatic: FALSE

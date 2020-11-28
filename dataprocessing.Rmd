@@ -6,10 +6,15 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(readxl)
 library(janitor)
+library(tigris)
+library(leaflet)
+library(haven)
+library(gganimate)
+
 ```
 
 ```{r}
@@ -19,9 +24,247 @@ data <- read_csv("raw_data/Community_Development_Public_Service_Program_Activiti
 filtered_data <- data %>%
   filter(fiscal_year == "2018-19") 
 write_rds(filtered_data, "App/data.rds")
+
 ```
 
 ```{r}
-read_rds("App/data.rds")
+district_level <- read.csv("raw_data/Community_Development_Public_Service_Program_Activities_by_Supervisor_District.csv") %>%
+  clean_names()
+
+write_rds(district_level, "App/data_new.rds")
 ```
+
+```{r}
+calfresh_monthly <- read_xlsx("raw_data/calfresh_monthly.xlsx") %>%
+  clean_names()
+
+write_rds(calfresh_monthly, "App/data_new.rds")
+
+p <- calfresh_monthly %>%
+  filter(county == "San Francisco") %>%
+           ggplot(aes(x = date, y = unemployment_monthly)) +
+           geom_line() +
+  theme_bw() +
+  geom_point() +
+  transition_reveal(date, range = NULL)
+
+animate(p, end_pause = 30)
+```
+
+```{r}
+PRI_calfresh <- read_csv("raw_data/PRI_calfresh.csv", col_types = cols(County = col_character(),
+  FIPS = col_character(),
+  `County Center X` = col_double(),
+  `County Center Y` = col_double(),
+  Consortium = col_character(),
+  `Calendar Year` = col_double(),
+  `CalFresh Eligibles CY` = col_number(),
+  `PRI Estimate Frequency` = col_character(),
+  `5 Year Estimate` = col_character(),
+  PRI = col_character())) %>%
+  clean_names()
+
+write_rds(PRI_calfresh, "App/data_new.rds")
+
+
+PRI_calfresh_ggplot <- PRI_calfresh %>%
+  filter(county %in% c("San Francisco", "Statewide")) %>%
+  ggplot(aes(y = pri, x = calendar_year, color = county)) +
+  geom_point() +
+  transition_reveal(calendar_year, range = NULL) +
+  labs(title = "Calfresh Program Reach - San Francisco vs Statewide", x = "Year", y = "Program Reach Index (%)") + theme_bw()
+
+animate(PRI_calfresh_ggplot, end_pause = 30)
+
+```
+
+
+
+```{r}
+opp_zones <- read_csv("raw_data/opportunity_zones.csv", col_types = cols(census_tract = col_double(),
+  Value = col_double(), lat = col_double(), long = col_double(), name = col_character())) %>%
+mutate(NAME = census_tract)
+
+food_banks <- read_xlsx("raw_data/FoodBanks.xlsx")
+View(food_banks)
+
+tract_data <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
+  mutate(NAME = as.numeric(NAME)) %>%
+  geo_join(opp_zones, by = "NAME") 
+
+pal <- colorNumeric(
+  palette = "Greens",
+  domain = tract_data$Value)
+bins <- c(0, 5, 10)
+pal <- colorBin("YlOrRd", domain = tract_data$Value, bins = bins)
+
+getColor <- function(food_banks) {
+  sapply(food_banks$lat, function(lat) {
+  if(lat == 37.73230) {
+    "green"
+  } else {
+    "orange"
+  } })
+}
+
+icons <- awesomeIcons(
+  icon = 'ios-close',
+  iconColor = 'black',
+  library = 'ion',
+  markerColor = getColor(food_banks)
+)
+
+
+tract_data %>%      
+  sf::st_transform(4326) %>% 
+  leaflet() %>%
+  addTiles() %>%
+    addProviderTiles("CartoDB") %>% 
+    addAwesomeMarkers(data = food_banks, ~as.numeric(long), ~as.numeric(lat), icon=icons, label=~as.character(name)) %>%
+    #addMarkers(-121.8847, 37.3456, popup = "CityTeam Ministries", label = "CityTeam") %>%
+    setView(-122.409981, 37.773972, zoom = 12) %>% 
+  setMaxBounds(lng1 = -122.517412, lat1 = 37.706829, lng2 = -122.347559, lat2 = 37.811813) %>%
+  addTiles() %>%
+    addPolygons(fillColor = ~pal(tract_data$Value), weight = 2,
+  opacity = 1,
+  color = "white",
+  dashArray = "3",
+  fillOpacity = 0.7) 
+
+
+
+```
+
+
+```{r}
+income <- read_xlsx("raw_data/income.xlsx") %>%
+  clean_names() %>%
+  rename(NAME = tract_code)
+
+income_data <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
+  mutate(NAME = as.numeric(NAME)) %>%
+  geo_join(income, by = "NAME") %>%
+  mutate(tract_median_family_income = tract_median_family_income *1000)
+
+income_bins <- c(240000, 210000, 180000, 150000, 120000, 90000, 60000, 30000, 0)
+income_pal <- colorBin("Greens", domain = income_data$tract_median_family_income, bins = income_bins)
+
+
+income_data %>%
+ sf::st_transform(4326) %>% 
+    mutate(popup = str_c("Census Tract: ",  "<strong>", NAME, "</strong>",
+                       "<br/>",
+                       "Median Household Income (2019) ", "<strong>", tract_median_family_income, "</strong>") %>%
+           map(htmltools::HTML)) %>%
+  leaflet() %>% 
+  addTiles() %>%
+      addProviderTiles("CartoDB") %>% 
+    addAwesomeMarkers(data = food_banks, ~as.numeric(long), ~as.numeric(lat), icon=icons, label=~as.character(name)) %>%
+    setView(-122.409981, 37.773972, zoom = 12) %>% 
+    addPolygons(label = ~popup, fillColor = ~income_pal(income_data$tract_median_family_income), weight = 2,
+  opacity = 1,
+  color = "white",
+  dashArray = "3",
+  fillOpacity = 0.7) %>%
+  addLegend(pal = income_pal, 
+            values = income_data$tract_median_family_income, 
+            position = "bottomright", 
+            title = "Median household incomes")
+
+
+```
+
+
+```{r}
+minority_bins <- c(0, 20, 40, 60, 80, 100)
+minority_pal <- colorBin("Blues", domain = income_data$minority_population, bins = minority_bins)
+
+
+income_data %>%
+ sf::st_transform(4326) %>% 
+    mutate(popup = str_c("Census Tract: ",  "<strong>", NAME, "</strong>",
+                       "<br/>",
+                       "Percent Minority Population ", "<strong>", minority_population, "</strong>",
+                       "<br/>",
+                       "Total Minority Population ", "<strong>", tract_minority_percent, "</strong>") %>%
+           map(htmltools::HTML)) %>%
+  leaflet() %>% 
+  addTiles() %>%
+      addProviderTiles("CartoDB") %>% 
+    addAwesomeMarkers(data = food_banks, ~as.numeric(long), ~as.numeric(lat), icon=icons, label=~as.character(name)) %>%
+    setView(-122.409981, 37.773972, zoom = 12) %>% 
+    addPolygons(label = ~popup, fillColor = ~minority_pal(income_data$minority_population), weight = 2,
+  opacity = 1,
+  color = "white",
+  dashArray = "3",
+  fillOpacity = 0.7) %>%
+  addLegend(pal = minority_pal, 
+            values = income_data$minority_population, 
+            position = "bottomright", 
+            title = "Percent Minority Population")
+
+```
+
+
+```{r}
+cases <- read_csv("raw_data/COVID-19_Cases_and_Deaths_Summarized_by_Geography.csv", col_types = cols(area_type = col_character(), id = col_double(), count = col_integer(), rate = col_double(), deaths = col_integer(), acs_population = col_integer(), last_updated_at = col_character(), multipolygon = col_character()))
+cases <- cases %>%
+  filter(area_type == "Census Tract") %>%
+  select(1:10) %>%
+  mutate(tract = as.numeric(str_sub(id, 6, 10))) %>%
+  mutate(NAME = tract/100) 
+
+data <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
+  mutate(NAME = as.numeric(NAME)) %>%
+  geo_join(cases, by = "NAME") 
+
+
+#pal <- colorNumeric(palette = "magma", domain = data$count)
+other_bins <- c(0, 20, 40, 60, 80, 100, 200, 300, Inf)
+pal <- colorBin("YlOrRd", domain = data$count, bins = other_bins)
+
+getColor <- function(food_banks) {
+  sapply(food_banks$lat, function(lat) {
+  if(lat == 37.73230) {
+    "green"
+  } else {
+    "orange"
+  } })
+}
+
+icons <- awesomeIcons(
+  icon = 'ios-close',
+  iconColor = 'black',
+  library = 'ion',
+  markerColor = getColor(food_banks)
+)
+
+data %>%
+ sf::st_transform(4326) %>% 
+    mutate(popup = str_c("Census Tract: ",  "<strong>", NAME, "</strong>",
+                       "<br/>",
+                       "COVID-19 Cases: ", "<strong>", count, "</strong>") %>%
+           map(htmltools::HTML)) %>%
+  leaflet() %>% 
+  addTiles() %>%
+      addProviderTiles("CartoDB") %>% 
+    addAwesomeMarkers(data = food_banks, ~as.numeric(long), ~as.numeric(lat), icon=icons, label=~as.character(name)) %>%
+    setView(-122.409981, 37.773972, zoom = 12) %>% 
+    addPolygons(label = ~popup, fillColor = ~pal(data$count), weight = 2,
+  opacity = 1,
+  color = "white",
+  dashArray = "3",
+  fillOpacity = 0.7) %>%
+  addLegend(pal = pal, 
+            values = data$count, 
+            position = "bottomright", 
+            title = "COVID Cases")
+
+```
+
+```{r}
+yourData = read_dta("App/shiny_data/ADULT.dta")
+write.csv(yourData, file = "yourStataFile.csv")
+```
+
 
