@@ -14,6 +14,10 @@ library(tigris)
 library(leaflet)
 library(haven)
 library(gganimate)
+library(rstanarm)
+library(gtsummary)
+library(gt)
+
 
 ```
 
@@ -38,7 +42,7 @@ write_rds(district_level, "App/data_new.rds")
 calfresh_monthly <- read_xlsx("raw_data/calfresh_monthly.xlsx") %>%
   clean_names()
 
-write_rds(calfresh_monthly, "App/data_new.rds")
+write_rds(calfresh_monthly, "App/shiny_data/calfresh_monthly.rds")
 
 p <- calfresh_monthly %>%
   filter(county == "San Francisco") %>%
@@ -64,8 +68,7 @@ PRI_calfresh <- read_csv("raw_data/PRI_calfresh.csv", col_types = cols(County = 
   PRI = col_character())) %>%
   clean_names()
 
-write_rds(PRI_calfresh, "App/data_new.rds")
-
+write_rds(PRI_calfresh, "App/shiny_data/PRI_calfresh.rds")
 
 PRI_calfresh_ggplot <- PRI_calfresh %>%
   filter(county %in% c("San Francisco", "Statewide")) %>%
@@ -76,6 +79,58 @@ PRI_calfresh_ggplot <- PRI_calfresh %>%
 
 animate(PRI_calfresh_ggplot, end_pause = 30)
 
+PRI_calfresh_ggplot
+
+```
+
+```{r}
+calfresh_overall <- read_csv("raw_data/calfresh_overall.csv", col_types = cols(County = col_character(),
+  `Calendar Year` = col_double(),
+  `Elderly CalFresh July` = col_number(),
+  `Age 18 to 59 CalFresh July` = col_number(),
+  `Children CalFresh July` = col_number(),
+  `ESL CalFresh July CY` = col_character(),
+  `Total Population CY` = col_number(),
+  `Total Elderly 60Plus CY` = col_number(),
+  `Total Children Under 18 CY` = col_number(),
+  `Total ESL Over age 5 CY` = col_character(),
+  `Total SSI Recipients CY` = col_number())) %>%
+    select(County, `Calendar Year`, `Elderly CalFresh July`, `Age 18 to 59 CalFresh July`, `Children CalFresh July`, `ESL CalFresh July CY`, `Total Population CY`, `Total Elderly 60Plus CY`, `Total Children Under 18 CY`, `Total ESL Over age 5 CY`, `Total SSI Recipients CY`) %>%
+  clean_names()
+
+
+
+statewide_avg <- calfresh_overall %>%
+  filter(county %in% c("Statewide")) %>%
+  mutate(elderly_cal_fresh_july = elderly_cal_fresh_july/31) %>%
+  mutate(age_18_to_59_cal_fresh_july = age_18_to_59_cal_fresh_july/31) %>%
+  mutate(children_cal_fresh_july = children_cal_fresh_july/31) %>%
+  mutate(total_population_cy = total_population_cy/31) %>%
+  mutate(total_elderly_60plus_cy = total_elderly_60plus_cy/31) %>%
+  mutate(total_children_under_18_cy = total_children_under_18_cy/31) %>%
+  mutate(total_ssi_recipients_cy = total_ssi_recipients_cy/31)
+
+calfresh_overall <- calfresh_overall %>%
+  filter(county == "San Francisco")
+
+  
+calfresh_total <- rbind(statewide_avg, calfresh_overall) %>%
+  select(-esl_cal_fresh_july_cy, -total_esl_over_age_5_cy) 
+
+write_rds(calfresh_total, "App/shiny_data/calfresh_total.rds")
+
+calfresh_total %>%
+  ggplot(aes(y = elderly_cal_fresh_july, x = calendar_year, color = county)) +
+  geom_line() +
+  transition_reveal(calendar_year, range = NULL) +
+  labs(title = "Variable - San Francisco vs Statewide", x = "Year", y = "Count") + 
+  theme_bw()
+
+
+#animate(PRI_calfresh_ggplot, end_pause = 30)
+
+
+
 ```
 
 
@@ -83,10 +138,14 @@ animate(PRI_calfresh_ggplot, end_pause = 30)
 ```{r}
 opp_zones <- read_csv("raw_data/opportunity_zones.csv", col_types = cols(census_tract = col_double(),
   Value = col_double(), lat = col_double(), long = col_double(), name = col_character())) %>%
-mutate(NAME = census_tract)
+mutate(NAME = census_tract) 
+
+  write_rds(opp_zones, "App/shiny_data/opp_zones.rds")
+
 
 food_banks <- read_xlsx("raw_data/FoodBanks.xlsx")
-View(food_banks)
+  write_rds(food_banks, "App/shiny_data/food_banks.rds")
+
 
 tract_data <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
   mutate(NAME = as.numeric(NAME)) %>%
@@ -96,7 +155,7 @@ pal <- colorNumeric(
   palette = "Greens",
   domain = tract_data$Value)
 bins <- c(0, 5, 10)
-pal <- colorBin("YlOrRd", domain = tract_data$Value, bins = bins)
+pal <- colorBin("Greens", domain = tract_data$Value, bins = bins)
 
 getColor <- function(food_banks) {
   sapply(food_banks$lat, function(lat) {
@@ -121,7 +180,6 @@ tract_data %>%
   addTiles() %>%
     addProviderTiles("CartoDB") %>% 
     addAwesomeMarkers(data = food_banks, ~as.numeric(long), ~as.numeric(lat), icon=icons, label=~as.character(name)) %>%
-    #addMarkers(-121.8847, 37.3456, popup = "CityTeam Ministries", label = "CityTeam") %>%
     setView(-122.409981, 37.773972, zoom = 12) %>% 
   setMaxBounds(lng1 = -122.517412, lat1 = 37.706829, lng2 = -122.347559, lat2 = 37.811813) %>%
   addTiles() %>%
@@ -141,14 +199,16 @@ income <- read_xlsx("raw_data/income.xlsx") %>%
   clean_names() %>%
   rename(NAME = tract_code)
 
+  write_rds(income, "App/shiny_data/income.rds")
+
+
 income_data <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
   mutate(NAME = as.numeric(NAME)) %>%
   geo_join(income, by = "NAME") %>%
   mutate(tract_median_family_income = tract_median_family_income *1000)
 
-income_bins <- c(240000, 210000, 180000, 150000, 120000, 90000, 60000, 30000, 0)
+income_bins <- c(0, 40000, 80000, 120000, 160000, 200000, 240000, 280000, Inf)
 income_pal <- colorBin("Greens", domain = income_data$tract_median_family_income, bins = income_bins)
-
 
 income_data %>%
  sf::st_transform(4326) %>% 
@@ -214,7 +274,10 @@ cases <- cases %>%
   mutate(tract = as.numeric(str_sub(id, 6, 10))) %>%
   mutate(NAME = tract/100) 
 
-data <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
+  write_rds(cases, "App/shiny_data/cases.rds")
+
+
+cases_data <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
   mutate(NAME = as.numeric(NAME)) %>%
   geo_join(cases, by = "NAME") 
 
@@ -239,7 +302,7 @@ icons <- awesomeIcons(
   markerColor = getColor(food_banks)
 )
 
-data %>%
+cases_data %>%
  sf::st_transform(4326) %>% 
     mutate(popup = str_c("Census Tract: ",  "<strong>", NAME, "</strong>",
                        "<br/>",
@@ -256,15 +319,96 @@ data %>%
   dashArray = "3",
   fillOpacity = 0.7) %>%
   addLegend(pal = pal, 
-            values = data$count, 
+            values = cases_data$count, 
             position = "bottomright", 
             title = "COVID Cases")
 
 ```
 
 ```{r}
-yourData = read_dta("App/shiny_data/ADULT.dta")
-write.csv(yourData, file = "yourStataFile.csv")
+new_mrfei <- read_csv("raw_data/2_16_mrfei_data_table.csv", col_types = cols(
+  state = col_character(),
+  fips = col_double(),
+  mrfei = col_double()
+)) 
+
+newer_mrfei <- new_mrfei %>%
+  filter(state == "CA") %>%
+  mutate(tract = as.numeric(str_sub(fips, 5, 10))) %>%
+  rename(TRACTCE = tract)
+  
+  write_rds(newer_mrfei, "App/shiny_data/newer_mrfei.rds")
+
+
+merged_mrfei <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
+  mutate(TRACTCE = as.numeric(TRACTCE)) %>%
+  geo_join(newer_mrfei, by = "TRACTCE") 
+
+mrfei_bins <- c(0, 5, 10, 15, 20, 25, 30, 40, 65)
+mrfei_pal <- colorBin("Oranges", domain = merged_mrfei$mrfei, bins = mrfei_bins)
+
+getColor <- function(food_banks) {
+  sapply(food_banks$lat, function(lat) {
+  if(lat == 37.73230) {
+    "green"
+  } else {
+    "orange"
+  } })
+}
+
+icons <- awesomeIcons(
+  icon = 'ios-close',
+  iconColor = 'black',
+  library = 'ion',
+  markerColor = getColor(food_banks)
+)
+
+
+mrfei_map <- merged_mrfei %>%
+ sf::st_transform(4326) %>% 
+    mutate(popup = str_c("Census Tract: ",  "<strong>", NAME, "</strong>",
+                       "<br/>",
+                       "Modified Retail Food Environment Index: ", "<strong>", mrfei, "</strong>") %>%
+           map(htmltools::HTML)) %>%
+  leaflet() %>% 
+  addTiles() %>%
+      addProviderTiles("CartoDB") %>% 
+    addAwesomeMarkers(data = food_banks, ~as.numeric(long), ~as.numeric(lat), icon=icons, label=~as.character(name)) %>%
+    setView(-122.409981, 37.773972, zoom = 12) %>% 
+    addPolygons(label = ~popup, fillColor = ~mrfei_pal(merged_mrfei$mrfei), weight = 2,
+  opacity = 1,
+  color = "white",
+  dashArray = "3",
+  fillOpacity = 0.7) %>%
+  addLegend(pal = mrfei_pal, 
+            values = merged_mrfei$mrfei, 
+            position = "bottomright", 
+            title = "CDC MRFEI Index")
+
+
+
 ```
 
+
+
+```{r}
+yourData = read_dta("App/shiny_data/ADULT.dta")
+write.csv(yourData, file = "yourStataFile.csv")
+
+```
+
+
+```{r}
+CIH_data <- read_csv("yourStataFile.csv") 
+
+filtered_CIH <- CIH_data %>%
+  filter(fslevcb %in% c("1", "2"))
+
+CIH_mod <- stan_glm(data = filtered_CIH,
+                        formula = fslevcb ~ ak22_p1, ahedc_p1, ae2, ak28, ins, numcig, srage_p1,
+                        refresh = 0)
+
+
+
+```
 
