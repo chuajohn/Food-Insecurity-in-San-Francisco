@@ -44,6 +44,7 @@ write_rds(district_level, "App/data_new.rds")
 calfresh_monthly <- read_xlsx("raw_data/calfresh_monthly.xlsx") %>%
   clean_names()
 
+
 write_rds(calfresh_monthly, "App/shiny_data/calfresh_monthly.rds")
 
 p <- calfresh_monthly %>%
@@ -490,4 +491,8 @@ This model is a predictive one that attempts to determine how any given variable
 7) The number of cigarettes smoked per month is negatively correlated with food security status. For every increase of 1 in the 6 point scale (approximately 5 cigarettes), the individual is 4% more likely to be food insecure.
 8) Self-reported age is not correlated with food security status.
 
+
+```{r}
+View(district_level)
+```
 

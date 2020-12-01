@@ -14,12 +14,20 @@ library(broom.mixed)
 
 
 data <- read_rds("shiny_data/data.rds")
-district_level <- read_rds("shiny_data/data_new.rds")
+district_level <- read_rds("shiny_data/data_new.rds") %>%
+    rename("Race/Ethnicity" = race_ethnicity, "Income Level" = income_level, 
+           "Age Category" = age_category)
 food_banks <- read_rds("shiny_data/food_banks.rds")
 cases <- read_rds("shiny_data/cases.rds")
-calfresh_monthly <- read_rds("shiny_data/calfresh_monthly.rds")
+calfresh_monthly <- read_rds("shiny_data/calfresh_monthly.rds") %>%
+    rename("Unemployment" = unemployment_monthly, "Households Enrolled in Calfresh" = cal_fresh_households,
+           "Individuals Enrolled in Calfresh" = cal_fresh_persons)
 PRI_calfresh <- read_rds("shiny_data/PRI_calfresh.rds")
-calfresh_total <- read_rds("shiny_data/calfresh_total.rds")
+calfresh_total <- read_rds("shiny_data/calfresh_total.rds") %>%
+    rename("Individuals Aged between 18 and 59" = age_18_to_59_cal_fresh_july,
+           "Children" = children_cal_fresh_july,
+           "Total Population" = total_population_cy,
+           "Elderly above Age 60" = total_elderly_60plus_cy)
 newer_mrfei <- read_rds("shiny_data/newer_mrfei.rds")
 income <- read_rds("shiny_data/income.rds")
 income_new <- read_rds("shiny_data/income_new.rds")
@@ -56,32 +64,46 @@ ui <- fluidPage(theme = shinytheme("journal"),
                
                
                tabPanel("Demographics",
-                        titlePanel("By the Numbers: Assessing Needs in SF"),
-                        
-                        # Sidebar to select different variables 
-                        sidebarLayout(
-                            sidebarPanel(selectInput("district_choice", "Fig. 1 Supervisorial District", unique(district_level$supervisor_district), selected = 8), 
-                                         varSelectInput("dem_variable", "Fig. 1 Demographic Variable:", district_level[, c(5:7)]),
-                                         varSelectInput("variable", "Fig. 2 Variable:", calfresh_monthly[, c(4:6)]),
-                                         varSelectInput("calfreshdem_variable", "Fig. 4 Variable:", calfresh_total[, c(4:8)])),
-                            
-                            # Show a plot of the generated distribution
-                            mainPanel(h3("Demographics of Aid Recipients in District 8"),
-                                      plotOutput("newPlot"),
-                                      p("Aid recipients in District 8 are predominantly Hispanic/Latino, most are classified as 'extremely low income', and they mainly fall in age categories between 25 and 64."),
-                                      br(), 
-                                      h3("Trends in Food Insecurity in terms of Enrollment in Federal Food Stamps Program"),
-                                      plotOutput("calfreshmonthlyPlot"),
-                                      p("There is a sharp rise in the number of individuals and households in San Francisco enrolled in the federal food stamps program Calfresh after the outbreak of COVID-19, a trend reflected in the monthly unemployment rates as well. This suggests that food insecurity is on the rise as a result of the pandemic."),
-                                      br(), 
-                                      h3("Federal Food Stamps Program Reach in San Francisco"),
-                                      plotOutput("PRI_calfreshPlot"),
-                                      p("The Calfresh program in San Franciso has consistently had a lower program reach among food insecure individuals compared to statewide levels. Almost 50% of at-risk individuals are not enrolled in the Calfresh program."),
-                                      br(),
-                                      h3("Demographics of Recipients on Food Stamps in San Francisco"),
-                                      plotOutput("calfresh_totalPlot"),
-                                      p("San Francisco has fewer elderly, children and adults enrolled in the Calfresh program than the statewide average, which could partially be a function of the lower program reach in the city.")
-                            ))),
+                        tabsetPanel(tabPanel("Demographics by District",
+                                             titlePanel("By the Numbers: Assessing Needs in SF"),
+                                             
+                                             # Sidebar to select different variables 
+                                             sidebarLayout(
+                                                 sidebarPanel(selectInput("district_choice", "Fig. 1 Supervisorial District", unique(district_level$supervisor_district), selected = 8), 
+                                                              varSelectInput("dem_variable", "Fig. 1 Demographic Variable:", district_level[, c(5:7)])),
+
+                                                 # Show a plot of the generated distribution
+                                                 mainPanel(h3("Demographics of Aid Recipients in District 8"),
+                                                           plotOutput("newPlot"),
+                                                           p("Aid recipients in District 8 are predominantly Hispanic/Latino, most are classified as 'extremely low income', and they mainly fall in age categories between 25 and 64.")))),
+                                    tabPanel("Calfresh Program Data",
+                                             titlePanel("By the Numbers: Assessing Needs in SF"),
+                                             
+                                             # Sidebar to select different variables 
+                                             sidebarLayout(
+                                                 sidebarPanel(varSelectInput("variable", "Fig. 2 Variable:", calfresh_monthly[, c(4:6)])),
+
+                                                 # Show a plot of the generated distribution
+                                                 mainPanel(
+                                                           h3("Trends in Food Insecurity in terms of Enrollment in Federal Food Stamps Program"),
+                                                           plotOutput("calfreshmonthlyPlot"),
+                                                           p("There is a sharp rise in the number of individuals and households in San Francisco enrolled in the federal food stamps program Calfresh after the outbreak of COVID-19, a trend reflected in the monthly unemployment rates as well. This suggests that food insecurity is on the rise as a result of the pandemic."),
+                                                           br(), 
+                                                           h3("Federal Food Stamps Program Reach in San Francisco"),
+                                                           plotOutput("PRI_calfreshPlot"),
+                                                           p("The Calfresh program in San Franciso has consistently had a lower program reach among food insecure individuals compared to statewide levels. Almost 50% of at-risk individuals are not enrolled in the Calfresh program.")))),
+                                    tabPanel("Demographics of Food Stamp Recipients",                         titlePanel("By the Numbers: Assessing Needs in SF"),
+                                             
+                                             # Sidebar to select different variables 
+                                             sidebarLayout(
+                                                 sidebarPanel(varSelectInput("calfreshdem_variable", "Fig. 4 Variable:", calfresh_total[, c(4:7)])),
+                                                 
+                                                 # Show a plot of the generated distribution
+                                                 mainPanel(
+                                                           h3("Demographics of Recipients on Food Stamps in San Francisco"),
+                                                           plotOutput("calfresh_totalPlot"),
+                                                           p("San Francisco has fewer elderly, children and adults enrolled in the Calfresh program than the statewide average, which could partially be a function of the lower program reach in the city."))))
+                            )),
                
                tabPanel("Model",
                         titlePanel("Model"),
@@ -167,8 +189,9 @@ server <- function(input, output) {
     output$PRI_calfreshPlot <- renderPlot({
          PRI_calfresh %>%
             filter(county %in% c("San Francisco", "Statewide")) %>%
-            ggplot(aes(y = pri, x = calendar_year, color = county)) +
+            ggplot(aes(y = pri, x = calendar_year, color = county, group = county)) +
             geom_point() +
+            geom_line() +
             labs(title = "Calfresh Program Reach - San Francisco vs Statewide", x = "Year", y = "Program Reach Index (%)") + 
             theme_bw()
     })
