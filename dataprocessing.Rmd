@@ -17,6 +17,8 @@ library(gganimate)
 library(rstanarm)
 library(gtsummary)
 library(gt)
+library(broom.mixed)
+
 
 
 ```
@@ -136,11 +138,16 @@ calfresh_total %>%
 
 
 ```{r}
-opp_zones <- read_csv("raw_data/opportunity_zones.csv", col_types = cols(census_tract = col_double(),
-  Value = col_double(), lat = col_double(), long = col_double(), name = col_character())) %>%
+opp_zones_new <- read_csv("raw_data/opportunity_zones_new.csv", col_types = cols(census_tract = col_double(),
+  Value = col_double(),
+  agency = col_character(),
+  project_name = col_character(),
+  description = col_character(),
+  funding = col_character())) %>%
 mutate(NAME = census_tract) 
 
-  write_rds(opp_zones, "App/shiny_data/opp_zones.rds")
+
+write_rds(opp_zones_new, "App/shiny_data/opp_zones_new.rds")
 
 
 food_banks <- read_xlsx("raw_data/FoodBanks.xlsx")
@@ -149,13 +156,13 @@ food_banks <- read_xlsx("raw_data/FoodBanks.xlsx")
 
 tract_data <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
   mutate(NAME = as.numeric(NAME)) %>%
-  geo_join(opp_zones, by = "NAME") 
+  geo_join(opp_zones_new, by = "NAME") 
 
-pal <- colorNumeric(
-  palette = "Greens",
-  domain = tract_data$Value)
-bins <- c(0, 5, 10)
-pal <- colorBin("Greens", domain = tract_data$Value, bins = bins)
+tract_data$Value[is.na(tract_data$Value)] <- 20
+
+
+bins <- c(0, 20, 40, 60, 80, 100)
+pal <- colorBin("Reds", domain = tract_data$Value, bins = bins)
 
 getColor <- function(food_banks) {
   sapply(food_banks$lat, function(lat) {
@@ -173,17 +180,22 @@ icons <- awesomeIcons(
   markerColor = getColor(food_banks)
 )
 
-
 tract_data %>%      
   sf::st_transform(4326) %>% 
+    mutate(popup = str_c("Census Tract: ",  "<strong>", NAME, "</strong>",
+                       "<br/>",
+                       "Agency: ", "<strong>", agency, "</strong>",
+                       "<br/>",
+                       "Project Name: ", "<strong>", project_name, "</strong>",
+                       "<br/>",
+                       "Funding: ", "<strong>", funding, "</strong>") %>%
+                        map(htmltools::HTML)) %>%
   leaflet() %>%
   addTiles() %>%
     addProviderTiles("CartoDB") %>% 
     addAwesomeMarkers(data = food_banks, ~as.numeric(long), ~as.numeric(lat), icon=icons, label=~as.character(name)) %>%
     setView(-122.409981, 37.773972, zoom = 12) %>% 
-  setMaxBounds(lng1 = -122.517412, lat1 = 37.706829, lng2 = -122.347559, lat2 = 37.811813) %>%
-  addTiles() %>%
-    addPolygons(fillColor = ~pal(tract_data$Value), weight = 2,
+    addPolygons(label = ~popup, fillColor = ~pal(tract_data$Value), weight = 2,
   opacity = 1,
   color = "white",
   dashArray = "3",
@@ -191,24 +203,41 @@ tract_data %>%
 
 
 
+
+
 ```
 
 
 ```{r}
-income <- read_xlsx("raw_data/income.xlsx") %>%
+income_new <- read_xlsx("raw_data/income.xlsx") %>%
   clean_names() %>%
-  rename(NAME = tract_code)
-
-  write_rds(income, "App/shiny_data/income.rds")
-
+  rename(NAME = tract_code) %>%
+  mutate(tract_median_family_income = tract_median_family_income * 1000) 
 
 income_data <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
   mutate(NAME = as.numeric(NAME)) %>%
-  geo_join(income, by = "NAME") %>%
-  mutate(tract_median_family_income = tract_median_family_income *1000)
+  geo_join(income_new, by = "NAME") 
+
 
 income_bins <- c(0, 40000, 80000, 120000, 160000, 200000, 240000, 280000, Inf)
 income_pal <- colorBin("Greens", domain = income_data$tract_median_family_income, bins = income_bins)
+
+getColor <- function(food_banks) {
+  sapply(food_banks$lat, function(lat) {
+  if(lat == 37.73230) {
+    "green"
+  } else {
+    "orange"
+  } })
+}
+
+icons <- awesomeIcons(
+  icon = 'ios-close',
+  iconColor = 'black',
+  library = 'ion',
+  markerColor = getColor(food_banks)
+)
+
 
 income_data %>%
  sf::st_transform(4326) %>% 
@@ -231,7 +260,6 @@ income_data %>%
             position = "bottomright", 
             title = "Median household incomes")
 
-
 ```
 
 
@@ -239,6 +267,21 @@ income_data %>%
 minority_bins <- c(0, 20, 40, 60, 80, 100)
 minority_pal <- colorBin("Blues", domain = income_data$minority_population, bins = minority_bins)
 
+getColor <- function(food_banks) {
+  sapply(food_banks$lat, function(lat) {
+  if(lat == 37.73230) {
+    "green"
+  } else {
+    "orange"
+  } })
+}
+
+icons <- awesomeIcons(
+  icon = 'ios-close',
+  iconColor = 'black',
+  library = 'ion',
+  markerColor = getColor(food_banks)
+)
 
 income_data %>%
  sf::st_transform(4326) %>% 
@@ -399,16 +442,52 @@ write.csv(yourData, file = "yourStataFile.csv")
 
 
 ```{r}
-CIH_data <- read_csv("yourStataFile.csv") 
+CIH_data <- read_csv("yourStataFile.csv", col_types = cols(
+  .default = col_double()
+)) 
 
 filtered_CIH <- CIH_data %>%
-  filter(fslevcb %in% c("1", "2"))
+  filter(fslevcb %in% c("1", "2")) %>%
+  select(fslevcb, ak22_p1, ahedc_p1, ae2, ak28, ins, numcig, srage_p1)
 
-CIH_mod <- stan_glm(data = filtered_CIH,
-                        formula = fslevcb ~ ak22_p1, ahedc_p1, ae2, ak28, ins, numcig, srage_p1,
-                        refresh = 0)
+  write_rds(filtered_CIH, "App/shiny_data/filtered_CIH.rds")
 
+
+set.seed(10)
+CIH_mod <- stan_glm(data = filtered_CIH, 
+         formula = fslevcb ~ ak22_p1 + ahedc_p1 + ae2 + ak28 + ins + numcig + srage_p1,
+         refresh = 0)
+CIH_mod
+
+table_regression <- tbl_regression(CIH_mod, intercept = TRUE) %>%
+  as_gt() %>%
+     tab_header(title = md("*Regression of Demographic Characteristics on Food Insecurity Status among Individuals in California*"), 
+              subtitle = "The Effect of Annual Income, Educational Attainment, Fruit Consumption, Perceptions of Safety, Insurance Status, Number of Cigarettes Smoked Monthly and Age on Food Security") %>%
+    tab_source_note("Source: California Health Interview Survey (2019)")
 
 
 ```
+
+The dataset is from the adult sample of the California Health Interview Survey, conducted in 2019. It contains 4744 observations, drawn from a universe of respondents whose poverty level is less than 200% of the federal poverty level. 
+
+The variables that I am regressing are:
+fslevcb - a measure of food security. A 1 indicates that the respondent is food secure, a 2 indicates that they are food insecure.
+ak22_p1 - a measure of household total annual income before taxes. This is a 19-point scale from less than $10000 to over $18000, with each 1 point increase representing an increase in annual income of $10000.
+ahedc_p1 - a measure of educational attainment. This is a 9 point scale, ranging from no formal education/grades 1-8 to a Ph.D to equivalent.
+ae2 - a measure of the number of times the respondent consumed fruits in the past month. 
+ak28 - a measure of how often the respondent feels safe in their neighborhood. This is a 4 point scale, ranging from "all of the time" to "none of the time."
+ins - a measure of whether the respondent is insured. "1" is coded "Yes" and "2" is coded "No."
+numcig - a measure of the number of cigarettes smoked by the respondent each day. This is a 6 point scale, ranging from "none" to "20 or more".
+srage_p1 - a measure of self-reported age. 
+
+This model is a predictive one that attempts to determine how any given variable might predict food insecurity in a given individual. We can interpret the following from the regression:
+1) The "intercept" is the food security status when all the other variables are held at 0. It is 1.5, indicating the midpoint between food security and food insecurity.
+2) Annual household income is correlated with food security status. For every increase in annual household income of $10,000, the individual is 2% less likely to be food insecure. 
+3) Educational attainment is correlated with food security status. For every increase in educational attainment of 1 on the 9 point scale, the individual is 2% less likely to be food insecure. 
+4) There is no correlation between the number of times a respondent consumed fruit in the past month with their food security status.
+5) Perception of insecurity is negatively correlated with food security status. For every increase of 1 on the 4 point scale of self-reported perception of safety in the neighborhood (ie the respondent feels more insecure), the individual is 11% more likely to be food insecure.
+6) Current insurance status is not correlated with food security status.
+7) The number of cigarettes smoked per month is negatively correlated with food security status. For every increase of 1 in the 6 point scale (approximately 5 cigarettes), the individual is 4% more likely to be food insecure.
+8) Self-reported age is not correlated with food security status.
+
 

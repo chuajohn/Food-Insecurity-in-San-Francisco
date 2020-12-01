@@ -5,8 +5,8 @@ account: johnchua
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 3035606
-bundleId: 3920485
+bundleId: 3925506
 url: https://johnchua.shinyapps.io/Food_Security_SF/
-when: 1606691901.44595
+when: 1606787422.18544
 asMultiple: FALSE
 asStatic: FALSE
