@@ -12,7 +12,7 @@ library(gt)
 library(broom.mixed)
 
 
-
+# Reading in the files I prepared in my data processing rmd
 data <- read_rds("shiny_data/data.rds")
 district_level <- read_rds("shiny_data/data_new.rds") %>%
     rename("Race/Ethnicity" = race_ethnicity, "Income Level" = income_level, 
@@ -20,7 +20,8 @@ district_level <- read_rds("shiny_data/data_new.rds") %>%
 food_banks <- read_rds("shiny_data/food_banks.rds")
 cases <- read_rds("shiny_data/cases.rds")
 calfresh_monthly <- read_rds("shiny_data/calfresh_monthly.rds") %>%
-    rename("Unemployment" = unemployment_monthly, "Households Enrolled in Calfresh" = cal_fresh_households,
+    rename("Unemployment" = unemployment_monthly, 
+           "Households Enrolled in Calfresh" = cal_fresh_households,
            "Individuals Enrolled in Calfresh" = cal_fresh_persons)
 PRI_calfresh <- read_rds("shiny_data/PRI_calfresh.rds")
 calfresh_total <- read_rds("shiny_data/calfresh_total.rds") %>%
@@ -28,6 +29,9 @@ calfresh_total <- read_rds("shiny_data/calfresh_total.rds") %>%
            "Children" = children_cal_fresh_july,
            "Total Population" = total_population_cy,
            "Elderly above Age 60" = total_elderly_60plus_cy)
+
+# I rename some of the column names here so they are ready to be filtered below
+
 newer_mrfei <- read_rds("shiny_data/newer_mrfei.rds")
 income <- read_rds("shiny_data/income.rds")
 income_new <- read_rds("shiny_data/income_new.rds")
@@ -38,9 +42,10 @@ filtered_CIH <- read_rds("shiny_data/filtered_CIH.rds")
 ui <- fluidPage(theme = shinytheme("journal"),
     navbarPage("Food Insecurity in San Francisco",
                tabPanel("The Neighborhood",
-                        titlePanel("Visualizing Needs in the Neighborhood of Alemany Farm"),
+                        titlePanel("Visualizing Needs in the Neighborhood 
+                                   of Alemany Farm"),
                         
-                            # Show a plot of the generated distribution
+                            # Show plots of the generated distribution
                             mainPanel(h3("Proximity to Federal Opportunity Zones"),
                                       p("Alemany Farm is within walking distance of five federally-designated “opportunity zones” in the Portola and Excelsior neighborhoods of San Francisco. Its network of partner organizations extends well into the Hunters Point and Bayview neighborhoods, home to more than five additional opportunity zones marked by poverty, homelessness, and food scarcity."),
                                 leafletOutput("mapPlot"),
@@ -62,7 +67,7 @@ ui <- fluidPage(theme = shinytheme("journal"),
                                 leafletOutput("mrfeiPlot")
                             )),
                
-               
+
                tabPanel("Demographics",
                         tabsetPanel(tabPanel("Demographics by District",
                                              titlePanel("By the Numbers: Assessing Needs in SF"),
@@ -167,11 +172,16 @@ ui <- fluidPage(theme = shinytheme("journal"),
 # Define server logic required to draw a histogram
 server <- function(input, output) {
 
-
     output$newPlot <- renderPlot({
         district_level %>%
+            
+            # Filtering by district so that this is an input above.
+            
             filter(supervisor_district == input$district_choice) %>%
             filter(fiscal_year == "2018-19") %>%
+            
+            # Using demographic variable as an input in the dropdown above.
+            
             ggplot(aes(x = !!input$dem_variable)) +
             geom_bar() +
             labs(title = paste("SF Mayor's Office Aid Recipients According to Race In District ", input$district_choice), x = "Race/Ethnicity", y = "Number of Individuals") +
@@ -182,6 +192,9 @@ server <- function(input, output) {
     output$calfreshmonthlyPlot <- renderPlot({
         calfresh_monthly %>%
             filter(county == "San Francisco") %>%
+            
+            # Using demographic variable as the dropdown input above. 
+            
             ggplot(aes(x = date, y = !!input$variable)) +
             geom_line() +
             theme_bw()})
@@ -192,7 +205,8 @@ server <- function(input, output) {
             ggplot(aes(y = pri, x = calendar_year, color = county, group = county)) +
             geom_point() +
             geom_line() +
-            labs(title = "Calfresh Program Reach - San Francisco vs Statewide", x = "Year", y = "Program Reach Index (%)") + 
+            labs(title = "Calfresh Program Reach - San Francisco vs Statewide", 
+                 x = "Year", y = "Program Reach Index (%)") + 
             theme_bw()
     })
     
@@ -204,18 +218,28 @@ server <- function(input, output) {
             theme_bw()
     })
     
+    # The following are a series of leaflet plots. Their general structure is
+    # the same.
     
+    
+    # We use leaflet to download the shapefiles of the SF map.
     output$mapPlot <- renderLeaflet({
         tract_data <- tracts(state = "CA", county = "San Francisco", cb = TRUE) %>%
             mutate(NAME = as.numeric(NAME)) %>%
             geo_join(opp_zones_new, by = "NAME") 
         
+        # We join both the opp_zones dataset and the one called by leaflet.
+        
         tract_data$Value[is.na(tract_data$Value)] <- 20
         
-        
+  
+    # We define the number of bins according to the graduations in the data.      
         bins <- c(0, 20, 40, 60, 80, 100)
         pal <- colorBin("Reds", domain = tract_data$Value, bins = bins)
+       
         
+        # I set Alemany Farm to green and the other foodbanks as orange.
+         
         getColor <- function(food_banks) {
             sapply(food_banks$lat, function(lat) {
                 if(lat == 37.73230) {
@@ -225,12 +249,19 @@ server <- function(input, output) {
                 } })
         }
         
+        
+        # Defining the icons that will represent food banks.
+        
         icons <- awesomeIcons(
             icon = 'ios-close',
             iconColor = 'black',
             library = 'ion',
             markerColor = getColor(food_banks)
         )
+        
+        
+        # Using the leaflet command. We set popups, format the map and set the
+        # zoom.
         
         tract_data %>%      
             sf::st_transform(4326) %>% 
